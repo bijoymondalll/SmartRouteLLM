@@ -94,7 +94,9 @@ export default async function handler(req, res) {
         console.error("Gemini fallback also failed:", geminiError);
         return res.status(500).json({
           success: false,
-          error: "All providers failed.",
+          error: "All providers failed",
+          cerebras_error: cerebrasError ? cerebrasError.message : "No error captured",
+          gemini_error: geminiError ? geminiError.message : "No error captured",
         });
       }
     }
