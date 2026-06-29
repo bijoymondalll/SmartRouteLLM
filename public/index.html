@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartRouteLLM - Serverless AI Routing Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0B0F19;
+    }
+    .glow-border {
+      position: relative;
+    }
+    .glow-border::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+      border-radius: inherit;
+      z-index: -1;
+      opacity: 0.15;
+      transition: opacity 0.3s ease;
+    }
+    .glow-border:hover::after {
+      opacity: 0.3;
+    }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500/30 selection:text-indigo-200">
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex-grow">
+    
+    <!-- Header -->
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-8 border-b border-slate-800 gap-4">
+      <div>
+        <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+          SmartRouteLLM
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">Vercel Serverless AI Gateway & Routing Telemetry</p>
+      </div>
+      <div class="flex items-center">
+        <span class="relative flex h-2 w-2 mr-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 px-3 py-1.5 rounded-full tracking-wide">
+          System Operational (Zero-Cost Gateway)
+        </span>
+      </div>
+    </header>
+
+    <!-- Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
+      
+      <!-- Left Column: Prompt Router & Response (7 cols) -->
+      <section class="lg:col-span-7 flex flex-col gap-6">
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glow-border backdrop-blur-xl">
+          <h2 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Router Tester
+          </h2>
+          
+          <form id="router-form" class="space-y-4">
+            <div>
+              <label for="prompt" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">System Input Prompt</label>
+              <textarea 
+                id="prompt" 
+                rows="4" 
+                required
+                placeholder="Ask something... e.g. Write a quick tagline for a lightning-fast database backend."
+                class="w-full bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition duration-200 resize-none text-sm"
+              ></textarea>
+            </div>
+            
+            <button 
+              type="submit" 
+              id="submit-btn"
+              class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.99] text-white font-semibold py-3 px-6 rounded-xl transition duration-150 flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-lg shadow-indigo-950/40"
+            >
+              <span id="btn-text">Route Prompt</span>
+              <svg id="spinner" class="hidden animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </button>
+          </form>
+        </div>
+
+        <!-- Response Window -->
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-xl flex-grow flex flex-col justify-between min-h-[300px]">
+          <div>
+            <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Response Output</h2>
+            <div id="response-content" class="text-slate-300 leading-relaxed text-sm whitespace-pre-wrap min-h-[120px] bg-slate-950/40 p-4 rounded-xl border border-slate-900">
+              <span class="text-slate-500 italic">Submit a prompt above to route and generate a response.</span>
+            </div>
+          </div>
+
+          <!-- Response Stats Pills -->
+          <div id="stats-container" class="mt-6 flex flex-wrap gap-3 opacity-50 transition-opacity duration-300">
+            <div class="bg-indigo-950/40 border border-indigo-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
+              <span class="text-xs text-indigo-300 font-medium">Provider:</span>
+              <span id="stat-provider" class="text-xs font-bold text-indigo-100 uppercase tracking-wider">-</span>
+            </div>
+            <div class="bg-blue-950/40 border border-blue-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
+              <span class="text-xs text-blue-300 font-medium">Latency:</span>
+              <span id="stat-latency" class="text-xs font-bold text-blue-100">-</span>
+            </div>
+            <div class="bg-purple-950/40 border border-purple-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
+              <span class="text-xs text-purple-300 font-medium">Tokens:</span>
+              <span id="stat-tokens" class="text-xs font-bold text-purple-100">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Live Telemetry Logs (5 cols) -->
+      <section class="lg:col-span-5 flex flex-col">
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-xl flex flex-col h-full">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+              <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2"/></svg>
+              Live Telemetry
+            </h2>
+            <button id="refresh-btn" class="text-slate-400 hover:text-slate-200 transition-colors p-1" title="Refresh Logs">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17"/></svg>
+            </button>
+          </div>
+          
+          <p class="text-xs text-slate-400 mb-4">Recent Gateway Routing Logs</p>
+          
+          <div class="overflow-x-auto flex-grow">
+            <table class="min-w-full divide-y divide-slate-800 text-left text-xs">
+              <thead>
+                <tr class="text-slate-400 font-semibold">
+                  <th class="py-3 px-2">ID</th>
+                  <th class="py-3 px-2">Provider</th>
+                  <th class="py-3 px-2">Model</th>
+                  <th class="py-3 px-2 text-right">Tokens</th>
+                  <th class="py-3 px-2 text-right">Latency</th>
+                </tr>
+              </thead>
+              <tbody id="telemetry-body" class="divide-y divide-slate-800/50 text-slate-300">
+                <!-- Log rows will dynamically load here -->
+              </tbody>
+            </table>
+            <div id="no-logs" class="hidden text-center py-12 text-slate-500 italic">No telemetry data logged yet.</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-900 bg-slate-950/20 py-6 text-center text-xs text-slate-500">
+    <p>Powered by Turso DB & Vercel Edge Serverless functions. All rights reserved.</p>
+  </footer>
+
+  <!-- Dashboard Script -->
+  <script>
+    const form = document.getElementById('router-form');
+    const promptInput = document.getElementById('prompt');
+    const submitBtn = document.getElementById('submit-btn');
+    const btnText = document.getElementById('btn-text');
+    const spinner = document.getElementById('spinner');
+    
+    const responseContent = document.getElementById('response-content');
+    const statsContainer = document.getElementById('stats-container');
+    const statProvider = document.getElementById('stat-provider');
+    const statLatency = document.getElementById('stat-latency');
+    const statTokens = document.getElementById('stat-tokens');
+    
+    const telemetryBody = document.getElementById('telemetry-body');
+    const noLogsMsg = document.getElementById('no-logs');
+    const refreshBtn = document.getElementById('refresh-btn');
+
+    // Fetch and populate telemetry logs
+    async function fetchLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        
+        if (data.success && data.logs) {
+          telemetryBody.innerHTML = '';
+          if (data.logs.length === 0) {
+            noLogsMsg.classList.remove('hidden');
+            return;
+          }
+          noLogsMsg.classList.add('hidden');
+          
+          data.logs.forEach(log => {
+            const providerColor = log.provider === 'cerebras' ? 'text-indigo-400 bg-indigo-950/20 border-indigo-900/40' : 'text-blue-400 bg-blue-950/20 border-blue-900/40';
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-slate-900/30 transition-colors';
+            row.innerHTML = `
+              <td class="py-3 px-2 text-slate-500 font-mono">#${log.id}</td>
+              <td class="py-3 px-2">
+                <span class="px-2 py-0.5 rounded-full border text-[10px] uppercase font-bold ${providerColor}">
+                  ${log.provider}
+                </span>
+              </td>
+              <td class="py-3 px-2 text-slate-400 max-w-[120px] truncate" title="${log.model}">${log.model}</td>
+              <td class="py-3 px-2 text-right font-mono text-slate-400">${log.input_tokens || 0}<span class="text-slate-600">/</span>${log.output_tokens || 0}</td>
+              <td class="py-3 px-2 text-right font-mono text-emerald-400 font-semibold">${log.latency_ms || 0}ms</td>
+            `;
+            telemetryBody.appendChild(row);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load logs:', err);
+      }
+    }
+
+    // Submit prompt to gateway
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const prompt = promptInput.value.trim();
+      if (!prompt) return;
+      
+      // UI Loading State
+      submitBtn.disabled = true;
+      btnText.textContent = 'Routing...';
+      spinner.classList.remove('hidden');
+      responseContent.innerHTML = '<span class="text-slate-400 animate-pulse">Evaluating route and generating content via Gateway...</span>';
+      statsContainer.classList.add('opacity-50');
+
+      try {
+        const res = await fetch('/api/gateway', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prompt }),
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+          responseContent.textContent = data.response;
+          
+          // Populate Stats
+          statProvider.textContent = data.provider;
+          statLatency.textContent = `${data.latency_ms}ms`;
+          statTokens.textContent = `${data.input_tokens + data.output_tokens} (${data.input_tokens} in / ${data.output_tokens} out)`;
+          
+          statsContainer.classList.remove('opacity-50');
+        } else {
+          responseContent.innerHTML = `<span class="text-rose-500 font-semibold">Error:</span> ${data.error || 'Failed to process prompt.'}`;
+        }
+      } catch (err) {
+        responseContent.innerHTML = `<span class="text-rose-500 font-semibold">Network Error:</span> Could not reach the API gateway.`;
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        btnText.textContent = 'Route Prompt';
+        spinner.classList.add('hidden');
+        
+        // Refresh Telemetry
+        await fetchLogs();
+      }
+    });
+
+    refreshBtn.addEventListener('click', fetchLogs);
+
+    // Initial load
+    window.addEventListener('DOMContentLoaded', fetchLogs);
+  </script>
+</body>
+</html>
