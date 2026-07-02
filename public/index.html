@@ -3,153 +3,329 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SmartRouteLLM - Serverless AI Routing Dashboard</title>
+  <title>SmartRouteLLM — Serverless AI Routing Gateway</title>
+  <meta name="description" content="High-performance serverless AI routing gateway with automatic failover between Cerebras and Google Gemini.">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            surface: {
+              0: '#090A0B',
+              1: '#0F1114',
+              2: '#161719',
+              3: '#1C1D20',
+            }
+          },
+          animation: {
+            'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
+            'shimmer': 'shimmer 2.5s linear infinite',
+            'fade-in': 'fade-in 0.4s ease-out forwards',
+          },
+          keyframes: {
+            'glow-pulse': {
+              '0%, 100%': { opacity: '0.4' },
+              '50%': { opacity: '1' },
+            },
+            'shimmer': {
+              '0%': { backgroundPosition: '-200% 0' },
+              '100%': { backgroundPosition: '200% 0' },
+            },
+            'fade-in': {
+              '0%': { opacity: '0', transform: 'translateY(8px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+        }
+      }
+    }
+  </script>
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #0B0F19;
+    * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: 'Inter', system-ui, sans-serif; background-color: #090A0B; }
+    
+    /* Noise overlay for depth */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
     }
-    .glow-border {
+
+    /* Ambient gradient orbs */
+    .ambient-orb-1 {
+      position: fixed;
+      top: -15%;
+      right: -10%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .ambient-orb-2 {
+      position: fixed;
+      bottom: -20%;
+      left: -10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Glass panels */
+    .glass-panel {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .glass-panel:hover {
+      border-color: rgba(255,255,255,0.1);
+    }
+
+    /* Glow button */
+    .btn-glow {
       position: relative;
+      overflow: hidden;
     }
-    .glow-border::after {
+    .btn-glow::before {
       content: '';
       position: absolute;
       inset: -1px;
-      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+      background: linear-gradient(135deg, #3b82f6, #6366f1, #8b5cf6);
       border-radius: inherit;
       z-index: -1;
-      opacity: 0.15;
+      opacity: 0;
       transition: opacity 0.3s ease;
     }
-    .glow-border:hover::after {
-      opacity: 0.3;
+    .btn-glow:hover::before {
+      opacity: 1;
+    }
+    .btn-glow::after {
+      content: '';
+      position: absolute;
+      bottom: -50%;
+      left: 10%;
+      right: 10%;
+      height: 60%;
+      background: radial-gradient(ellipse, rgba(99,102,241,0.3) 0%, transparent 70%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .btn-glow:hover::after {
+      opacity: 1;
+    }
+
+    /* Command palette textarea */
+    .cmd-textarea {
+      transition: all 0.2s ease;
+    }
+    .cmd-textarea:focus {
+      box-shadow: 0 0 0 1px rgba(99,102,241,0.5), 0 0 20px rgba(99,102,241,0.1);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    /* Latency color classes */
+    .latency-fast { color: #34d399; }
+    .latency-mid  { color: #fbbf24; }
+    .latency-slow { color: #f87171; }
+
+    /* Logo gradient */
+    .logo-gradient {
+      background: linear-gradient(135deg, #60a5fa 0%, #818cf8 35%, #a78bfa 65%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Shimmer effect for loading */
+    .shimmer-bg {
+      background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.03) 50%, transparent 75%);
+      background-size: 200% 100%;
     }
   </style>
 </head>
-<body class="text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500/30 selection:text-indigo-200">
+<body class="text-neutral-100 min-h-screen flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200 relative">
+
+  <!-- Ambient light orbs -->
+  <div class="ambient-orb-1"></div>
+  <div class="ambient-orb-2"></div>
 
   <!-- Main Container -->
-  <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex-grow">
-    
-    <!-- Header -->
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-8 border-b border-slate-800 gap-4">
-      <div>
-        <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-          SmartRouteLLM
-        </h1>
-        <p class="text-sm text-slate-400 mt-1">Primary: Cerebras Llama-3 (Ultra-Fast) | Fallback: Google Gemini Edge</p>
+  <main class="relative z-10 max-w-[1360px] mx-auto w-full px-5 sm:px-8 lg:px-10 py-8 flex-grow">
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- HEADER -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-7 border-b border-white/[0.06] gap-4">
+      <div class="flex items-center gap-3.5">
+        <!-- Logo mark -->
+        <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/[0.08]">
+          <i data-lucide="router" class="w-[18px] h-[18px] text-indigo-400"></i>
+        </div>
+        <div>
+          <h1 class="text-[22px] font-extrabold tracking-tight logo-gradient leading-tight">SmartRouteLLM</h1>
+          <p class="text-[11px] text-neutral-500 mt-0.5 tracking-wide">
+            Primary: <span class="text-neutral-400">Cerebras Llama-3.3</span>
+            <span class="text-neutral-600 mx-1.5">·</span>
+            Fallback: <span class="text-neutral-400">Gemini 2.5 Flash</span>
+          </p>
+        </div>
       </div>
-      <div class="flex items-center">
-        <span class="relative flex h-2 w-2 mr-2">
-          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-        </span>
-        <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 px-3 py-1.5 rounded-full tracking-wide">
-          System Operational (Zero-Cost Gateway)
-        </span>
+      <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/[0.07] border border-emerald-500/[0.15]">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+          </span>
+          <span class="text-[11px] font-semibold text-emerald-400 tracking-wide">System Operational</span>
+        </div>
       </div>
     </header>
 
-    <!-- Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
-      
-      <!-- Left Column: Prompt Router & Response (7 cols) -->
-      <section class="lg:col-span-7 flex flex-col gap-6">
-        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glow-border backdrop-blur-xl">
-          <h2 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
-            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- CONTENT GRID -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-7">
+
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <!-- LEFT COLUMN: Router + Response (7 cols) -->
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <section class="lg:col-span-7 flex flex-col gap-5">
+
+        <!-- Router Tester Card -->
+        <div class="glass-panel rounded-2xl p-6 transition-colors duration-300">
+          <h2 class="text-[13px] font-semibold text-neutral-300 mb-5 flex items-center gap-2 uppercase tracking-widest">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-indigo-400"></i>
             Router Tester
           </h2>
-          
+
           <form id="router-form" class="space-y-4">
             <div>
-              <label for="prompt" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">System Input Prompt</label>
-              <textarea 
-                id="prompt" 
-                rows="4" 
+              <label for="prompt" class="block text-[10px] font-semibold text-neutral-500 uppercase tracking-[0.12em] mb-2">Input Prompt</label>
+              <textarea
+                id="prompt"
+                rows="4"
                 required
-                placeholder="Ask something... e.g. Write a quick tagline for a lightning-fast database backend."
-                class="w-full bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition duration-200 resize-none text-sm"
+                placeholder="Ask something… e.g. Write a quick tagline for a lightning-fast database backend."
+                class="cmd-textarea w-full bg-surface-1 border border-white/[0.06] rounded-xl p-4 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/50 transition-all duration-200 resize-none text-sm leading-relaxed font-light"
               ></textarea>
             </div>
-            
-            <button 
-              type="submit" 
+
+            <button
+              type="submit"
               id="submit-btn"
-              class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.99] text-white font-semibold py-3 px-6 rounded-xl transition duration-150 flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-lg shadow-indigo-950/40"
+              class="btn-glow w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2.5 focus:outline-none active:scale-[0.985] text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              <i data-lucide="send" class="w-4 h-4" id="send-icon"></i>
               <span id="btn-text">Route Prompt</span>
-              <svg id="spinner" class="hidden animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <svg id="spinner" class="hidden animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3.5"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </button>
           </form>
         </div>
 
-        <!-- Response Window -->
-        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-xl flex-grow flex flex-col justify-between min-h-[300px]">
+        <!-- Response Output Card -->
+        <div class="glass-panel rounded-2xl p-6 transition-colors duration-300 flex-grow flex flex-col justify-between min-h-[280px]">
           <div>
-            <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Response Output</h2>
-            <div id="response-content" class="text-slate-300 leading-relaxed text-sm whitespace-pre-wrap min-h-[120px] bg-slate-950/40 p-4 rounded-xl border border-slate-900">
-              <span class="text-slate-500 italic">Submit a prompt above to route and generate a response.</span>
+            <h2 class="text-[10px] font-semibold text-neutral-500 uppercase tracking-[0.12em] mb-4 flex items-center gap-2">
+              <i data-lucide="message-square" class="w-3 h-3 text-neutral-500"></i>
+              Response Output
+            </h2>
+            <div id="response-content" class="text-neutral-300 leading-relaxed text-sm whitespace-pre-wrap min-h-[100px] bg-surface-0/60 p-4 rounded-xl border border-white/[0.04] font-light">
+              <span class="text-neutral-600 italic">Submit a prompt above to route and generate a response.</span>
             </div>
           </div>
 
           <!-- Response Stats Pills -->
-          <div id="stats-container" class="mt-6 flex flex-wrap gap-3 opacity-50 transition-opacity duration-300">
-            <div class="bg-indigo-950/40 border border-indigo-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
-              <span class="text-xs text-indigo-300 font-medium">Provider:</span>
-              <span id="stat-provider" class="text-xs font-bold text-indigo-100 uppercase tracking-wider">-</span>
+          <div id="stats-container" class="mt-5 flex flex-wrap gap-2.5 opacity-40 transition-opacity duration-500">
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <i data-lucide="server" class="w-3 h-3 text-indigo-400/70"></i>
+              <span class="text-[10px] text-neutral-500 font-medium">Provider</span>
+              <span id="stat-provider" class="text-[11px] font-bold font-mono text-indigo-300 uppercase tracking-wider">-</span>
             </div>
-            <div class="bg-blue-950/40 border border-blue-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
-              <span class="text-xs text-blue-300 font-medium">Latency:</span>
-              <span id="stat-latency" class="text-xs font-bold text-blue-100">-</span>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <i data-lucide="activity" class="w-3 h-3 text-blue-400/70"></i>
+              <span class="text-[10px] text-neutral-500 font-medium">Latency</span>
+              <span id="stat-latency" class="text-[11px] font-bold font-mono text-blue-300">-</span>
             </div>
-            <div class="bg-purple-950/40 border border-purple-900/60 rounded-full px-4 py-1.5 flex items-center gap-2">
-              <span class="text-xs text-purple-300 font-medium">Tokens:</span>
-              <span id="stat-tokens" class="text-xs font-bold text-purple-100">-</span>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <i data-lucide="hash" class="w-3 h-3 text-violet-400/70"></i>
+              <span class="text-[10px] text-neutral-500 font-medium">Tokens</span>
+              <span id="stat-tokens" class="text-[11px] font-bold font-mono text-violet-300">-</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Right Column: Live Telemetry Logs (5 cols) -->
+      <!-- ─────────────────────────────────────────────────────────────── -->
+      <!-- RIGHT COLUMN: Live Telemetry (5 cols) -->
+      <!-- ─────────────────────────────────────────────────────────────── -->
       <section class="lg:col-span-5 flex flex-col">
-        <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-xl flex flex-col h-full">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2"/></svg>
+        <div class="glass-panel rounded-2xl p-6 transition-colors duration-300 flex flex-col h-full">
+          <div class="flex items-center justify-between mb-5">
+            <h2 class="text-[13px] font-semibold text-neutral-300 flex items-center gap-2 uppercase tracking-widest">
+              <i data-lucide="database" class="w-3.5 h-3.5 text-violet-400"></i>
               Live Telemetry
             </h2>
-            <button id="refresh-btn" class="text-slate-400 hover:text-slate-200 transition-colors p-1" title="Refresh Logs">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17"/></svg>
+            <button id="refresh-btn" class="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-300 transition-colors duration-200 px-2.5 py-1 rounded-lg hover:bg-white/[0.04]" title="Refresh Logs">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span class="text-[10px] font-medium hidden sm:inline">Refresh</span>
             </button>
           </div>
-          
-          <p class="text-xs text-slate-400 mb-4">Recent Gateway Routing Logs</p>
-          
-          <div class="overflow-x-auto flex-grow">
-            <table class="min-w-full divide-y divide-slate-800 text-left text-xs">
+
+          <p class="text-[10px] text-neutral-600 mb-4 uppercase tracking-[0.1em] font-medium">Recent Gateway Routing Events</p>
+
+          <div class="overflow-x-auto flex-grow -mx-2">
+            <table class="min-w-full text-left text-[11px]">
               <thead>
-                <tr class="text-slate-400 font-semibold">
-                  <th class="py-3 px-2">ID</th>
-                  <th class="py-3 px-2">Provider</th>
-                  <th class="py-3 px-2">Model</th>
-                  <th class="py-3 px-2 text-right">Tokens</th>
-                  <th class="py-3 px-2 text-right">Latency</th>
+                <tr class="text-neutral-500 font-semibold border-b border-white/[0.06]">
+                  <th class="py-2.5 px-2 font-semibold">
+                    <span class="flex items-center gap-1.5"><i data-lucide="hash" class="w-2.5 h-2.5"></i>ID</span>
+                  </th>
+                  <th class="py-2.5 px-2 font-semibold">
+                    <span class="flex items-center gap-1.5"><i data-lucide="server" class="w-2.5 h-2.5"></i>Provider</span>
+                  </th>
+                  <th class="py-2.5 px-2 font-semibold">
+                    <span class="flex items-center gap-1.5"><i data-lucide="cpu" class="w-2.5 h-2.5"></i>Model</span>
+                  </th>
+                  <th class="py-2.5 px-2 text-right font-semibold">
+                    <span class="flex items-center justify-end gap-1.5"><i data-lucide="bar-chart-2" class="w-2.5 h-2.5"></i>Tokens</span>
+                  </th>
+                  <th class="py-2.5 px-2 text-right font-semibold">
+                    <span class="flex items-center justify-end gap-1.5"><i data-lucide="zap" class="w-2.5 h-2.5"></i>Latency</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody id="telemetry-body" class="divide-y divide-slate-800/50 text-slate-300">
+              <tbody id="telemetry-body" class="divide-y divide-white/[0.04] text-neutral-400">
                 <!-- Log rows will dynamically load here -->
               </tbody>
             </table>
-            <div id="no-logs" class="hidden text-center py-12 text-slate-500 italic">No telemetry data logged yet.</div>
+            <div id="no-logs" class="hidden text-center py-16">
+              <i data-lucide="inbox" class="w-8 h-8 text-neutral-700 mx-auto mb-3"></i>
+              <p class="text-neutral-600 text-xs font-medium">No telemetry data logged yet.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -157,35 +333,55 @@
     </div>
   </main>
 
-  <!-- Footer -->
-  <footer class="border-t border-slate-900 bg-slate-950/20 py-6 text-center text-xs text-slate-500">
-    <p>Powered by Turso DB & Vercel Edge Serverless functions. All rights reserved.</p>
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- FOOTER -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <footer class="relative z-10 border-t border-white/[0.04] py-5 text-center">
+    <p class="text-[11px] text-neutral-600 font-medium tracking-wide">
+      Powered by
+      <span class="text-neutral-500">Turso DB</span>
+      <span class="text-neutral-700 mx-1">·</span>
+      <span class="text-neutral-500">Vercel Edge</span>
+      <span class="text-neutral-700 mx-1">·</span>
+      <span class="text-neutral-500">Cerebras Inference</span>
+    </p>
   </footer>
 
-  <!-- Dashboard Script -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- DASHBOARD SCRIPT (all original JS logic preserved exactly) -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
   <script>
     const form = document.getElementById('router-form');
     const promptInput = document.getElementById('prompt');
     const submitBtn = document.getElementById('submit-btn');
     const btnText = document.getElementById('btn-text');
     const spinner = document.getElementById('spinner');
-    
+
     const responseContent = document.getElementById('response-content');
     const statsContainer = document.getElementById('stats-container');
     const statProvider = document.getElementById('stat-provider');
     const statLatency = document.getElementById('stat-latency');
     const statTokens = document.getElementById('stat-tokens');
-    
+
     const telemetryBody = document.getElementById('telemetry-body');
     const noLogsMsg = document.getElementById('no-logs');
     const refreshBtn = document.getElementById('refresh-btn');
+
+    const sendIcon = document.getElementById('send-icon');
+
+    // Helper: latency color class
+    function getLatencyClass(ms) {
+      if (ms < 1000) return 'latency-fast';
+      if (ms < 3000) return 'latency-mid';
+      return 'latency-slow';
+    }
 
     // Fetch and populate telemetry logs
     async function fetchLogs() {
       try {
         const res = await fetch('/api/logs');
         const data = await res.json();
-        
+
         if (data.success && data.logs) {
           telemetryBody.innerHTML = '';
           if (data.logs.length === 0) {
@@ -193,21 +389,27 @@
             return;
           }
           noLogsMsg.classList.add('hidden');
-          
+
           data.logs.forEach(log => {
-            const providerColor = log.provider === 'cerebras' ? 'text-indigo-400 bg-indigo-950/20 border-indigo-900/40' : 'text-blue-400 bg-blue-950/20 border-blue-900/40';
+            const isCerebras = log.provider === 'cerebras';
+            const providerClasses = isCerebras
+              ? 'text-indigo-400 bg-indigo-500/[0.08] border-indigo-500/20'
+              : 'text-sky-400 bg-sky-500/[0.08] border-sky-500/20';
+            const latencyMs = log.latency_ms || 0;
+            const latencyColor = getLatencyClass(latencyMs);
+
             const row = document.createElement('tr');
-            row.className = 'hover:bg-slate-900/30 transition-colors';
+            row.className = 'hover:bg-white/[0.03] transition-colors duration-150 group';
             row.innerHTML = `
-              <td class="py-3 px-2 text-slate-500 font-mono">#${log.id}</td>
-              <td class="py-3 px-2">
-                <span class="px-2 py-0.5 rounded-full border text-[10px] uppercase font-bold ${providerColor}">
+              <td class="py-2.5 px-2 font-mono text-neutral-600 text-[10px] group-hover:text-neutral-500 transition-colors">#${log.id}</td>
+              <td class="py-2.5 px-2">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] uppercase font-bold tracking-wider ${providerClasses}">
                   ${log.provider}
                 </span>
               </td>
-              <td class="py-3 px-2 text-slate-400 max-w-[120px] truncate" title="${log.model}">${log.model}</td>
-              <td class="py-3 px-2 text-right font-mono text-slate-400">${log.input_tokens || 0}<span class="text-slate-600">/</span>${log.output_tokens || 0}</td>
-              <td class="py-3 px-2 text-right font-mono text-emerald-400 font-semibold">${log.latency_ms || 0}ms</td>
+              <td class="py-2.5 px-2 text-neutral-500 max-w-[110px] truncate text-[10px] font-mono" title="${log.model}">${log.model}</td>
+              <td class="py-2.5 px-2 text-right font-mono text-neutral-500 text-[10px]">${log.input_tokens || 0}<span class="text-neutral-700">/</span>${log.output_tokens || 0}</td>
+              <td class="py-2.5 px-2 text-right font-mono font-semibold text-[10px] ${latencyColor}">${latencyMs}ms</td>
             `;
             telemetryBody.appendChild(row);
           });
@@ -220,16 +422,17 @@
     // Submit prompt to gateway
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
+
       const prompt = promptInput.value.trim();
       if (!prompt) return;
-      
+
       // UI Loading State
       submitBtn.disabled = true;
       btnText.textContent = 'Routing...';
       spinner.classList.remove('hidden');
-      responseContent.innerHTML = '<span class="text-slate-400 animate-pulse">Evaluating route and generating content via Gateway...</span>';
-      statsContainer.classList.add('opacity-50');
+      if (sendIcon) sendIcon.classList.add('hidden');
+      responseContent.innerHTML = '<span class="text-neutral-500 animate-pulse">Evaluating route and generating content via Gateway...</span>';
+      statsContainer.classList.add('opacity-40');
 
       try {
         const res = await fetch('/api/gateway', {
@@ -239,29 +442,30 @@
           },
           body: JSON.stringify({ prompt }),
         });
-        
+
         const data = await res.json();
-        
+
         if (data.success) {
           responseContent.textContent = data.response;
-          
+
           // Populate Stats
           statProvider.textContent = data.provider;
           statLatency.textContent = `${data.latency_ms}ms`;
           statTokens.textContent = `${data.input_tokens + data.output_tokens} (${data.input_tokens} in / ${data.output_tokens} out)`;
-          
-          statsContainer.classList.remove('opacity-50');
+
+          statsContainer.classList.remove('opacity-40');
         } else {
-          responseContent.innerHTML = `<span class="text-rose-500 font-semibold">Error:</span> ${data.error || 'Failed to process prompt.'}`;
+          responseContent.innerHTML = `<span class="text-rose-400 font-semibold">Error:</span> <span class="text-neutral-400">${data.error || 'Failed to process prompt.'}</span>`;
         }
       } catch (err) {
-        responseContent.innerHTML = `<span class="text-rose-500 font-semibold">Network Error:</span> Could not reach the API gateway.`;
+        responseContent.innerHTML = `<span class="text-rose-400 font-semibold">Network Error:</span> <span class="text-neutral-400">Could not reach the API gateway.</span>`;
         console.error(err);
       } finally {
         submitBtn.disabled = false;
         btnText.textContent = 'Route Prompt';
         spinner.classList.add('hidden');
-        
+        if (sendIcon) sendIcon.classList.remove('hidden');
+
         // Refresh Telemetry
         await fetchLogs();
       }
@@ -270,7 +474,10 @@
     refreshBtn.addEventListener('click', fetchLogs);
 
     // Initial load
-    window.addEventListener('DOMContentLoaded', fetchLogs);
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      fetchLogs();
+    });
   </script>
 </body>
 </html>
