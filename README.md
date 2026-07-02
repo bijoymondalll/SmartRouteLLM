@@ -13,8 +13,8 @@ SmartRouteLLM is a high-performance, serverless AI routing gateway built for pro
 
 SmartRouteLLM addresses LLM provider instability and rate limits through a resilient, **zero-latency fallback router concept**:
 
-*   **Primary Provider:** **Cerebras Inference (Llama-3.1-8B)** — Chosen for industry-leading, ultra-fast token generation speeds to serve primary requests instantly.
-*   **Fallback Provider:** **Google Gemini 1.5 Flash** — Triggered immediately if the primary provider encounters timeouts, rate limits (HTTP 429), or service outages.
+*   **Primary Provider:** **Cerebras Inference (Llama 3)** — Chosen for industry-leading, ultra-fast token generation speeds to serve primary requests instantly.
+*   **Fallback Provider:** **Google Gemini Flash** — Triggered immediately if the primary provider encounters timeouts, rate limits (HTTP 429), or service outages.
 
 This architecture ensures your application maintains high availability and consistent responses under all load conditions.
 
@@ -41,8 +41,8 @@ The gateway is built on a serverless and edge-ready execution model:
              | (Try Primary)                       | (On Failure)
              v                                     v
    +-------------------+                 +-------------------+
-   |  Cerebras Llama   |                 |    Google Gemini  |
-   |   (Llama 3.1 8B)  |                 |   (1.5 Flash)     |
+   |  Cerebras Llama 3 |                 |   Google Gemini   |
+   |                   |                 |      (Flash)      |
    +---------+---------+                 +---------+---------+
              |                                     |
              +------------------+------------------+
@@ -63,7 +63,7 @@ The gateway is built on a serverless and edge-ready execution model:
 ## ✨ Key Features
 
 *   **Zero-Cost Cloud Infrastructure:** Designed to run fully within free tiers (Vercel Serverless and Turso Starter) while scaling elastically as traffic increases.
-*   **Circuit Breaker Fallback:** Sophisticated error handling that seamlessly shifts workloads to Gemini 1.5 Flash upon Cerebras rate limits or downtime.
+*   **Circuit Breaker Fallback:** Sophisticated error handling that seamlessly shifts workloads to Google Gemini Flash upon Cerebras rate limits or downtime.
 *   **Token & Latency Analytics Dashboard:** A beautiful, responsive real-time analytics panel displaying total requests, token throughput, average latency, and provider distribution.
 
 ---
@@ -81,6 +81,6 @@ The gateway is built on a serverless and edge-ready execution model:
 
 The routing flow operates in three sequential phases:
 
-1.  **Request Ingestion & Primary Dispatch:** The gateway intercepts incoming client requests, packaging the payload and dispatching it directly to the ultra-low-latency Cerebras Llama-3.1-8B engine.
-2.  **Circuit Breaker & Fallback Execution:** If the primary connection times out or fails (e.g., due to API key exhaustions or rate constraints), the router instantly catches the exception and routes the query to Google Gemini 1.5 Flash as the failover engine.
+1.  **Request Ingestion & Primary Dispatch:** The gateway intercepts incoming client requests, packaging the payload and dispatching it directly to the ultra-low-latency Cerebras Llama 3 engine.
+2.  **Circuit Breaker & Fallback Execution:** If the primary connection times out or fails (e.g., due to API key exhaustions or rate constraints), the router instantly catches the exception and routes the query to Google Gemini Flash as the failover engine.
 3.  **Asynchronous Telemetry Logging:** Upon returning the completed response back to the client, the gateway fires an asynchronous query to write metadata (selected provider, response time in ms, prompt/completion tokens, and timestamp) directly into the Turso database, leaving the core client request pathway completely unblocked.
