@@ -1,198 +1,169 @@
-// ============================================================================
-// 🔥 BIJOY.AI SUPREME API GATEWAY (CEREBRAS 3.3 + GEMINI 2.5 FLASH FALLBACK)
-// ============================================================================
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
+import { createClient } from "@libsql/client";
 
-export default {
-  async fetch(request, env, ctx) {
-    // 💥 1. CORS Preflight Bypass
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: getCorsHeaders() });
-    }
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const cerebras = new OpenAI({
+  apiKey: process.env.CEREBRAS_API_KEY,
+  baseURL: "https://api.cerebras.ai/v1",
+});
 
-    if (request.method !== 'POST') {
-      return new Response('Only POST requests allowed', { status: 405 });
-    }
+const db = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
 
-    const log = [];
-    let body = {};
-    let messages = [];
+// =========================================================================
+// 🗄️ TURSO TELEMETRY — fully isolated, never touches the response path
+// =========================================================================
+async function logRequestToTurso({ provider, model, input_tokens, output_tokens, latency_ms }) {
+  try {
+    await db.execute({
+      sql: "INSERT INTO requests_log (provider, model, input_tokens, output_tokens, latency_ms) VALUES (?, ?, ?, ?, ?)",
+      args: [provider, model, input_tokens, output_tokens, latency_ms],
+    });
+  } catch (error) {
+    console.error("Turso Logging Failed:", error);
+  }
+}
 
-    try {
-      body = await request.json();
-      messages = body.messages || [];
-    } catch (e) {
-      return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
-        status: 400,
-        headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' },
-      });
-    }
+// =========================================================================
+// 🚀 PRIMARY: Cerebras via OpenAI SDK (llama-3.3-70b)
+// =========================================================================
+async function callCerebras(prompt) {
+  const start = Date.now();
+  const response = await cerebras.chat.completions.create({
+    model: "llama-3.3-70b",
+    messages: [{ role: "user", content: prompt }],
+  });
+  const latency = Date.now() - start;
 
-    // 💥 UNIVERSAL FIRE-POOL (closure over `body` so payload forwarding works)
-    async function firePool(poolName, keysArr, endpointUrl, overrideModel, timeoutMs = 7000) {
-      if (!endpointUrl || endpointUrl.trim().length < 8) return { success: false, reason: 'NO_URL' };
-
-      const pool = getCleanPool(keysArr);
-      if (pool.length === 0) return { success: false, reason: 'EMPTY_KEY_ARRAY' };
-
-      const targetUrl = smartUrl(endpointUrl);
-      const payload = { ...body, model: overrideModel };
-
-      for (const apiKey of pool) {
-        try {
-          const res = await fetch(targetUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-              'Connection': 'close',
-            },
-            body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(timeoutMs),
-          });
-
-          if (res.ok) {
-            const headers = new Headers(res.headers);
-            Object.entries(getCorsHeaders()).forEach(([k, v]) => headers.set(k, v));
-            return { success: true, res: new Response(res.body, { status: res.status, headers }) };
-          }
-        } catch (e) {
-          continue; // 💥 Key dead → instant hop to next key in the pool
-        }
-      }
-      return { success: false, reason: 'ALL_KEYS_DEAD' };
-    }
-
-    // =========================================================================
-    // 🚀 LAYER 1: Cerebras Pool (Heavyweight Llama-3.3-70b)
-    // CEREBRAS_KEYS comes from env as a comma-separated string of API keys
-    // =========================================================================
-    const cerebrasKeys = parseKeysFromEnv(env.CEREBRAS_KEYS);
-    const cer = await firePool(
-      'Cerebras',
-      cerebrasKeys,
-      'https://api.cerebras.ai/v1/chat/completions',
-      'llama-3.3-70b',
-      5000,
-    );
-    if (cer.success) return cer.res;
-    log.push(`Cerebras:${cer.reason}`);
-
-    // =========================================================================
-    // 🚀 LAYER 2: Gemini 2.5 Flash Fallback (System Prompts Fixed)
-    // =========================================================================
-    const geminiRes = await callGemini(env.GEMINI_API_KEY, messages);
-    if (geminiRes) return geminiRes;
-    log.push('Gemini: Failed to fetch or parse');
-
-    // 💥 DEAD END: All layers failed
-    return new Response(
-      JSON.stringify({ error: 'All API layers failed', logs: log }),
-      {
-        status: 500,
-        headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' },
-      },
-    );
-  },
-};
-
-// ============================================================================
-// 🛠️ HELPER FUNCTIONS
-// ============================================================================
-
-function getCorsHeaders() {
   return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    success: true,
+    provider: "cerebras",
+    model: "llama-3.3-70b",
+    response: response.choices[0]?.message?.content || "",
+    latency_ms: latency,
+    input_tokens: response.usage?.prompt_tokens || 0,
+    output_tokens: response.usage?.completion_tokens || 0,
   };
 }
 
-// 💥 Parse comma-separated key string from Cloudflare env into a clean array
-function parseKeysFromEnv(envValue) {
-  if (!envValue || typeof envValue !== 'string') return [];
-  return envValue
-    .split(',')
-    .map(k => k.trim())
-    .filter(k => k.length > 3);
-}
+// =========================================================================
+// 🛡️ FALLBACK: Gemini via SDK (gemini-2.5-flash)
+// CRITICAL: system role → systemInstruction field on getGenerativeModel()
+// =========================================================================
+async function callGemini(prompt, messages) {
+  const start = Date.now();
 
-// 💥 Pool cleaner: filters junk, randomizes order for load distribution
-function getCleanPool(keysArray) {
-  if (!Array.isArray(keysArray)) return [];
-  return keysArray
-    .map(k => (typeof k === 'string' ? k.trim() : ''))
-    .filter(k => k.length > 3)
-    .sort(() => Math.random() - 0.5);
-}
-
-// 💥 Smart URL normalizer: guarantees the endpoint always ends with /v1/chat/completions
-function smartUrl(baseUrl) {
-  if (!baseUrl || typeof baseUrl !== 'string') return '';
-  let clean = baseUrl.trim().replace(/\/+$/, '');
-  if (!clean.endsWith('/v1/chat/completions')) {
-    clean += '/v1/chat/completions';
+  // Extract system instruction from messages array if present
+  let systemText = null;
+  if (Array.isArray(messages)) {
+    const systemMsg = messages.find(m => m.role === "system");
+    if (systemMsg) systemText = systemMsg.content;
   }
-  return clean;
+
+  // Build model config — systemInstruction goes HERE, not in the content payload
+  const modelConfig = { model: "gemini-2.5-flash" };
+  if (systemText) {
+    modelConfig.systemInstruction = systemText;
+  }
+
+  const model = genAI.getGenerativeModel(modelConfig);
+
+  // For multi-turn messages, use startChat; for single prompt, use generateContent
+  let result;
+  if (Array.isArray(messages) && messages.filter(m => m.role !== "system").length > 1) {
+    // Multi-turn: build history from all non-system messages except the last user message
+    const nonSystemMsgs = messages.filter(m => m.role !== "system");
+    const history = nonSystemMsgs.slice(0, -1).map(m => ({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }],
+    }));
+    const lastMsg = nonSystemMsgs[nonSystemMsgs.length - 1];
+
+    const chat = model.startChat({ history });
+    result = await chat.sendMessage(lastMsg.content);
+  } else {
+    // Single prompt: direct generateContent call
+    result = await model.generateContent(prompt);
+  }
+
+  const response = await result.response;
+  const latency = Date.now() - start;
+  const usage = response.usageMetadata;
+
+  return {
+    success: true,
+    provider: "gemini",
+    model: "gemini-2.5-flash",
+    response: response.text() || "",
+    latency_ms: latency,
+    input_tokens: usage?.promptTokenCount || 0,
+    output_tokens: usage?.candidatesTokenCount || 0,
+  };
 }
 
-// ============================================================================
-// 🔥 GEMINI 2.5 FLASH — Raw REST API (System Role parsing permanently fixed)
-// ============================================================================
-async function callGemini(apiKey, messages) {
-  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length < 5) return null;
+// =========================================================================
+// 🔥 VERCEL SERVERLESS HANDLER
+// =========================================================================
+export default async function handler(req, res) {
+  // CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  let systemInstruction = null;
-  const contents = [];
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed. Use POST." });
 
-  // 💥 System Role parsing — Gemini API wants system prompts as `systemInstruction`
-  (messages || []).forEach(m => {
-    if (m.role === 'system') {
-      systemInstruction = { parts: [{ text: m.content }] };
-    } else {
-      contents.push({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }],
+  const { prompt, messages } = req.body || {};
+  if (!prompt && (!messages || messages.length === 0)) {
+    return res.status(400).json({ error: "Missing 'prompt' or 'messages' in request body." });
+  }
+
+  // Resolve the actual prompt text to send to providers
+  const resolvedPrompt = prompt || messages.filter(m => m.role !== "system").pop()?.content || "";
+
+  let result;
+  let cerebrasError = null;
+  let geminiError = null;
+
+  // 🚀 LAYER 1: Cerebras (llama-3.3-70b)
+  try {
+    result = await callCerebras(resolvedPrompt);
+  } catch (err1) {
+    cerebrasError = err1;
+    console.error("Cerebras failed:", err1.message);
+
+    // 🛡️ LAYER 2: Gemini (gemini-2.5-flash) with systemInstruction fix
+    try {
+      result = await callGemini(resolvedPrompt, messages);
+    } catch (err2) {
+      geminiError = err2;
+      console.error("Gemini fallback failed:", err2.message);
+
+      // 💥 BOTH DEAD — 200 so frontend fetch never throws
+      return res.status(200).json({
+        success: false,
+        error: "All API layers failed",
+        cerebras_log: cerebrasError.message || "Unknown Cerebras error",
+        gemini_log: geminiError.message || "Unknown Gemini error",
       });
     }
-  });
-
-  const bodyPayload = { contents };
-  if (systemInstruction) bodyPayload.systemInstruction = systemInstruction;
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
-        body: JSON.stringify(bodyPayload),
-        signal: AbortSignal.timeout(12000),
-      },
-    );
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    const t = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!t) return null;
-
-    return new Response(
-      JSON.stringify({
-        id: `chatcmpl-${Date.now()}`,
-        object: 'chat.completion',
-        model: 'gemini-2.5-flash',
-        choices: [
-          {
-            index: 0,
-            message: { role: 'assistant', content: t },
-            finish_reason: 'stop',
-          },
-        ],
-      }),
-      {
-        headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' },
-      },
-    );
-  } catch (error) {
-    return null;
   }
+
+  // 🗄️ Turso Telemetry — isolated, never blocks response
+  try {
+    await logRequestToTurso({
+      provider: result.provider,
+      model: result.model,
+      input_tokens: result.input_tokens,
+      output_tokens: result.output_tokens,
+      latency_ms: result.latency_ms,
+    });
+  } catch (dbError) {
+    console.error("Database telemetry logging failed:", dbError);
+  }
+
+  return res.status(200).json(result);
 }
