@@ -84,3 +84,46 @@ The routing flow operates in three sequential phases:
 1.  **Request Ingestion & Primary Dispatch:** The gateway intercepts incoming client requests, packaging the payload and dispatching it directly to the ultra-low-latency Cerebras Llama 3 engine.
 2.  **Circuit Breaker & Fallback Execution:** If the primary connection times out or fails (e.g., due to API key exhaustions or rate constraints), the router instantly catches the exception and routes the query to Google Gemini Flash as the failover engine.
 3.  **Asynchronous Telemetry Logging:** Upon returning the completed response back to the client, the gateway fires an asynchronous query to write metadata (selected provider, response time in ms, prompt/completion tokens, and timestamp) directly into the Turso database, leaving the core client request pathway completely unblocked.
+
+---
+
+## 🛠️ Getting Started & Local Setup
+
+Follow these steps to run the serverless AI routing gateway locally:
+
+### 1. Prerequisites
+Ensure you have the following installed:
+*   **Node.js** (v18.0.0 or higher)
+*   **Vercel CLI** (for local serverless simulation)
+*   **Turso CLI** (optional, for managing the database)
+
+### 2. Clone the Repository
+```bash
+git clone https://github.com/bijoymondalll/SmartRouteLLM.git
+cd SmartRouteLLM
+```
+
+### 3. Install Dependencies
+Install all required packages:
+```bash
+npm install
+```
+
+### 4. Environment Variables Setup
+Create a `.env` file in the root of your project and populate it with your API keys and database credentials:
+```env
+# Database Credentials
+TURSO_DATABASE_URL=your_turso_db_url
+TURSO_AUTH_TOKEN=your_turso_auth_token
+
+# AI Provider API Keys
+CEREBRAS_API_KEY=your_cerebras_api_key
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### 5. Running Locally
+Run the Vercel development server to simulate the serverless edge environment:
+```bash
+npx vercel dev
+```
+Open [http://localhost:3000](http://localhost:3000) to view the telemetry dashboard in your browser.
